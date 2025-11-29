@@ -216,7 +216,8 @@ public class ObjectCarrySystem : MonoBehaviour
         Transform targetParent = carryParent != null ? carryParent : rayOrigin;
 
         // 计算目标位置（父物体位置 + 偏移量，基于父物体局部坐标）
-        Vector3 targetPosition = targetParent.TransformPoint(carryOffset);
+        Vector3 targetPosition = targetParent.TransformPoint(
+            carryOffset + new Vector3(0 , carryingObjectHeightWidth.y/4 , carryingObjectHeightWidth.x/4));
 
         // 平滑移动到目标位置（使用Lerp让移动更自然）
         _carriedRigidbody.transform.position = Vector3.Lerp(

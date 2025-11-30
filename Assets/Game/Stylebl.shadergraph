@@ -547,20 +547,6 @@
         {
             "m_OutputSlot": {
                 "m_Node": {
-                    "m_Id": "0b4b5fa6d5124afa8224dc591688d4a4"
-                },
-                "m_SlotId": 0
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "64c7e4adaf5e4416a1bf0d7add7f6311"
-                },
-                "m_SlotId": 3
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
                     "m_Id": "0b961e0d275d44de99025a4d397313e7"
                 },
                 "m_SlotId": 1
@@ -3036,7 +3022,7 @@
     "m_Title": "Function",
     "m_Position": {
         "x": -3729.333251953125,
-        "y": 240.000244140625
+        "y": 239.9998779296875
     }
 }
 
@@ -4613,7 +4599,7 @@
     "m_Title": "TerrainColor",
     "m_Position": {
         "x": -3991.333251953125,
-        "y": -376.66650390625
+        "y": -376.666748046875
     }
 }
 
@@ -6534,9 +6520,6 @@
         },
         {
             "m_Id": "19733ad407084d8c8e1f6ed8dee628a2"
-        },
-        {
-            "m_Id": "a6db95f479d74751935072f249b88d8e"
         },
         {
             "m_Id": "7d4b9862e8f74a61a0f3d2b7470c238c"
@@ -9385,26 +9368,11 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "a6db95f479d74751935072f249b88d8e",
-    "m_Id": 3,
-    "m_DisplayName": "repelRadius",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "repelRadius",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.GroupData",
     "m_ObjectId": "a7a357fee4d44d769e5ce0b7ce3d9dee",
     "m_Title": "WindNiose",
     "m_Position": {
-        "x": -4461.33349609375,
+        "x": -4461.3330078125,
         "y": -2358.000244140625
     }
 }
@@ -9987,7 +9955,7 @@
     "m_Title": "Swing",
     "m_Position": {
         "x": -2912.0,
-        "y": -1286.6666259765625
+        "y": -1286.666748046875
     }
 }
 
@@ -10725,7 +10693,7 @@
     "m_Title": "Depth",
     "m_Position": {
         "x": -3426.0,
-        "y": 454.0
+        "y": 453.9998779296875
     }
 }
 
@@ -12069,8 +12037,8 @@
     "m_ObjectId": "dcc4b8c5189a4545a358aa0a513c3a58",
     "m_Title": "Shade",
     "m_Position": {
-        "x": -3078.666748046875,
-        "y": 85.33349609375
+        "x": -3078.66650390625,
+        "y": 85.333251953125
     }
 }
 

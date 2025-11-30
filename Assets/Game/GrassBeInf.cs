@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 草地排斥体管理器 - 负责管理场景中影响草地变形的排斥体
+/// 草地排斥体管理器 - 负责管理场景中影响草地变形的排斥体（带LOD优化）
 /// </summary>
 public class GrassRepellerManager : MonoBehaviour
 {
@@ -10,11 +10,20 @@ public class GrassRepellerManager : MonoBehaviour
     [Tooltip("手动指定的排斥体变换列表")]
     public List<Transform> repellers = new List<Transform>();
 
-    [Tooltip("排斥体检测半径（未来扩展用）")]
-    public float detectionRadius = 5f;
+    [Tooltip("额外扩展半径（最终半径 = Collider尺寸 + 此值，无Collider时直接用此值）")]
+    public float extraRadius = 1f;
+
+    [Tooltip("排斥体体积乘法偏移量")]
+    public float offsetMil = 1f;
 
     [Tooltip("排斥体所在层级（未来扩展用）")]
     public LayerMask repellerLayer = -1;
+
+    [Header("LOD性能设置（逆向逻辑：只计算相机范围内的草）")]
+    [Tooltip("LOD最大距离：超过此距离的草完全不执行排斥体变形（单位：米）")]
+    public float lodMaxDistance = 50f; // 相机为中心的最大计算距离
+    [Tooltip("LOD过渡距离：在LOD最大距离前的过渡区间，逐渐降低变形强度（单位：米）")]
+    public float lodFadeDistance = 10f;
 
     [Header("调试设置")]
     [Tooltip("启用调试可视化")]
@@ -30,9 +39,12 @@ public class GrassRepellerManager : MonoBehaviour
     // 调试计时器
     private float _debugTimer;
 
-    // Shader属性ID
+    // Shader属性ID（新增LOD和相机位置相关）
     private static int RepellersProperty = Shader.PropertyToID("_Repellers");
     private static int RepellerCountProperty = Shader.PropertyToID("_RepellerCount");
+    private static int LodMaxDistanceProperty = Shader.PropertyToID("_LodMaxDistance");
+    private static int LodFadeDistanceProperty = Shader.PropertyToID("_LodFadeDistance");
+    private static int CameraPositionProperty = Shader.PropertyToID("_GrassRepellerCameraPos");
 
     /// <summary>
     /// 当前激活的排斥体数量
@@ -48,6 +60,10 @@ public class GrassRepellerManager : MonoBehaviour
     {
         InitializeBuffer();
         _debugTimer = debugLogInterval;
+
+        // 初始化LOD相关Shader属性
+        Shader.SetGlobalFloat(LodMaxDistanceProperty, lodMaxDistance);
+        Shader.SetGlobalFloat(LodFadeDistanceProperty, lodFadeDistance);
     }
 
     void Update()
@@ -56,6 +72,7 @@ public class GrassRepellerManager : MonoBehaviour
 
         UpdateRepellerData();
         UpdateDebugInfo();
+        UpdateCameraPositionToShader(); // 实时更新相机位置到Shader（逆向LOD核心）
     }
 
     void OnDestroy()
@@ -65,7 +82,6 @@ public class GrassRepellerManager : MonoBehaviour
 
     void OnDisable()
     {
-        // 禁用时清理缓冲区以避免内存泄漏
         if (_repellerBuffer != null)
         {
             _repellerBuffer.Release();
@@ -78,16 +94,12 @@ public class GrassRepellerManager : MonoBehaviour
     /// </summary>
     private void InitializeBuffer()
     {
-        // 清理空引用
         CleanNullRepellers();
-
         int maxRepellers = Mathf.Max(1, repellers.Count);
 
-        // 创建ComputeBuffer，每个排斥体使用Vector4存储（xyz位置 + w半径）
         _repellerBuffer = new ComputeBuffer(maxRepellers, sizeof(float) * 4);
         _repellerPositions = new Vector4[maxRepellers];
 
-        // 设置全局Shader属性
         Shader.SetGlobalBuffer(RepellersProperty, _repellerBuffer);
         Shader.SetGlobalInt(RepellerCountProperty, 0);
     }
@@ -100,30 +112,85 @@ public class GrassRepellerManager : MonoBehaviour
         if (_repellerBuffer == null) return;
 
         CleanNullRepellers();
-
         int validCount = 0;
 
-        // 收集有效的排斥体位置数据
         for (int i = 0; i < repellers.Count && i < _repellerPositions.Length; i++)
         {
             if (repellers[i] != null && repellers[i].gameObject.activeInHierarchy)
             {
                 Vector3 position = repellers[i].position;
-                _repellerPositions[validCount] = new Vector4(position.x, position.y, position.z, detectionRadius);
+                float finalRadius = CalculateRepellerFinalRadius(repellers[i]);
+
+                // 调试模式下才打印，避免性能消耗
+                if (enableDebug)
+                {
+                    Debug.Log($"排斥体 {repellers[i].name} 最终半径: {finalRadius} (Collider尺寸+extraRadius)");
+                }
+
+                _repellerPositions[validCount] = new Vector4(position.x, position.y, position.z, finalRadius);
                 validCount++;
             }
         }
 
         ActiveRepellerCount = validCount;
 
-        // 更新ComputeBuffer数据
         if (validCount > 0)
         {
             _repellerBuffer.SetData(_repellerPositions, 0, 0, validCount);
         }
 
-        // 更新Shader中的排斥体数量
         Shader.SetGlobalInt(RepellerCountProperty, validCount);
+    }
+
+    /// <summary>
+    /// 计算排斥体的最终影响半径
+    /// </summary>
+    private float CalculateRepellerFinalRadius(Transform repellerTransform)
+    {
+        Collider collider = repellerTransform.GetComponent<Collider>();
+        if (collider == null || !collider.enabled)
+        {
+            return extraRadius;
+        }
+
+        float colliderRadius = 0f;
+        switch (collider)
+        {
+            case SphereCollider sphereCollider:
+                colliderRadius = sphereCollider.radius * Mathf.Max(
+                    repellerTransform.lossyScale.x,
+                    repellerTransform.lossyScale.y,
+                    repellerTransform.lossyScale.z
+                );
+                break;
+
+            case CapsuleCollider capsuleCollider:
+                float radius = capsuleCollider.radius * Mathf.Max(
+                    repellerTransform.lossyScale.x,
+                    repellerTransform.lossyScale.z
+                );
+                float halfHeight = capsuleCollider.height * 0.5f * repellerTransform.lossyScale.y;
+                colliderRadius = Mathf.Max(radius, halfHeight);
+                break;
+
+            case BoxCollider boxCollider:
+                Vector3 boxExtents = boxCollider.size * 0.5f;
+                boxExtents.x *= repellerTransform.lossyScale.x;
+                boxExtents.y *= repellerTransform.lossyScale.y;
+                boxExtents.z *= repellerTransform.lossyScale.z;
+                colliderRadius = Mathf.Sqrt(
+                    boxExtents.x * boxExtents.x +
+                    boxExtents.y * boxExtents.y +
+                    boxExtents.z * boxExtents.z
+                );
+                break;
+
+            default:
+                colliderRadius = 0f;
+                break;
+        }
+
+        return Mathf.Max(colliderRadius * offsetMil + extraRadius, 0.1f);
     }
 
     /// <summary>
@@ -150,12 +217,22 @@ public class GrassRepellerManager : MonoBehaviour
         _debugTimer -= Time.deltaTime;
         if (_debugTimer <= 0f)
         {
-            if (Application.isPlaying)
-            {
-                Debug.Log($"[GrassRepellerManager] 活跃排斥体: {ActiveRepellerCount}/{repellers.Count}, " +
-                         $"Buffer状态: {(_repellerBuffer != null ? "有效" : "无效")}");
-            }
+            Debug.Log($"[GrassRepellerManager] 活跃排斥体: {ActiveRepellerCount}/{repellers.Count}, " +
+                     $"Buffer状态: {(_repellerBuffer != null ? "有效" : "无效")}, " +
+                     $"LOD最大距离: {lodMaxDistance}m");
             _debugTimer = debugLogInterval;
+        }
+    }
+
+    /// <summary>
+    /// 实时更新相机位置到Shader（逆向LOD核心：用于计算草叶到相机的距离）
+    /// </summary>
+    private void UpdateCameraPositionToShader()
+    {
+        Camera mainCam = Camera.main;
+        if (mainCam != null)
+        {
+            Shader.SetGlobalVector(CameraPositionProperty, mainCam.transform.position);
         }
     }
 
@@ -195,7 +272,7 @@ public class GrassRepellerManager : MonoBehaviour
 
 #if UNITY_EDITOR
     /// <summary>
-    /// 编辑器可视化
+    /// 编辑器可视化（添加LOD范围显示）
     /// </summary>
     void OnDrawGizmosSelected()
     {
@@ -205,24 +282,93 @@ public class GrassRepellerManager : MonoBehaviour
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(transform.position, 0.5f);
 
-        // 绘制排斥体连线
+        // 绘制LOD范围（以相机为中心的动态范围，编辑器中用管理器位置替代预览）
+        Camera mainCam = Camera.main;
+        Vector3 lodCenter = mainCam != null ? mainCam.transform.position : transform.position;
+
+        if (lodMaxDistance > 0)
+        {
+            // LOD最大范围（半透明紫色）
+            Gizmos.color = new Color(0.8f, 0.2f, 0.8f, 0.1f);
+            Gizmos.DrawSphere(lodCenter, lodMaxDistance);
+            Gizmos.color = new Color(0.8f, 0.2f, 0.8f, 0.3f);
+            Gizmos.DrawWireSphere(lodCenter, lodMaxDistance);
+
+            // LOD过渡范围（半透明粉色）
+            if (lodFadeDistance > 0 && lodFadeDistance < lodMaxDistance)
+            {
+                Gizmos.color = new Color(1f, 0.4f, 0.6f, 0.1f);
+                Gizmos.DrawSphere(lodCenter, lodMaxDistance - lodFadeDistance);
+                Gizmos.color = new Color(1f, 0.4f, 0.6f, 0.3f);
+                Gizmos.DrawWireSphere(lodCenter, lodMaxDistance - lodFadeDistance);
+            }
+        }
+
+        // 绘制排斥体连线和最终影响范围
         Gizmos.color = Color.yellow;
         foreach (var repeller in repellers)
         {
             if (repeller != null)
             {
                 Gizmos.DrawLine(transform.position, repeller.position);
+                float finalRadius = CalculateRepellerFinalRadius(repeller);
 
-                // 绘制排斥体影响范围
+                // 最终影响范围（半透明橙色）
                 Gizmos.color = new Color(1f, 0.5f, 0f, 0.3f);
-                Gizmos.DrawWireSphere(repeller.position, detectionRadius);
+                Gizmos.DrawWireSphere(repeller.position, finalRadius);
+                // Collider原始范围（透明蓝色）
+                DrawColliderGizmo(repeller, 0.1f);
+
                 Gizmos.color = Color.yellow;
             }
         }
 
-        // 显示信息文本
-        UnityEditor.Handles.Label(transform.position + Vector3.up,
-            $"Grass Repeller Manager\nActive: {ActiveRepellerCount}");
+        // 显示信息文本（包含LOD信息）
+        UnityEditor.Handles.Label(transform.position + Vector3.up * 2,
+            $"Grass Repeller Manager\n" +
+            $"Active: {ActiveRepellerCount}\n" +
+            $"Extra Radius: {extraRadius}\n" +
+            $"LOD Max: {lodMaxDistance}m\n" +
+            $"LOD Fade: {lodFadeDistance}m");
+    }
+
+    /// <summary>
+    /// 绘制排斥体的Collider原始范围
+    /// </summary>
+    private void DrawColliderGizmo(Transform repeller, float alpha)
+    {
+        Collider collider = repeller.GetComponent<Collider>();
+        if (collider == null || !collider.enabled) return;
+
+        Gizmos.color = new Color(0f, 0.5f, 1f, alpha);
+        Matrix4x4 originalMatrix = Gizmos.matrix;
+
+        // 应用排斥体的缩放和旋转
+        Gizmos.matrix = Matrix4x4.TRS(
+            repeller.position,
+            repeller.rotation,
+            repeller.lossyScale
+        );
+
+        switch (collider)
+        {
+            case SphereCollider sphere:
+                Gizmos.DrawWireSphere(Vector3.zero, sphere.radius);
+                break;
+            case CapsuleCollider capsule:
+                // 胶囊体Gizmo简化绘制
+                float capsuleHalfHeight = capsule.height * 0.5f - capsule.radius;
+                Gizmos.DrawWireSphere(Vector3.up * capsuleHalfHeight, capsule.radius);
+                Gizmos.DrawWireSphere(Vector3.down * capsuleHalfHeight, capsule.radius);
+                Gizmos.DrawLine(Vector3.up * (capsuleHalfHeight + capsule.radius),
+                                Vector3.down * (capsuleHalfHeight + capsule.radius));
+                break;
+            case BoxCollider box:
+                Gizmos.DrawWireCube(Vector3.zero, box.size);
+                break;
+        }
+
+        Gizmos.matrix = originalMatrix;
     }
 #endif
 }

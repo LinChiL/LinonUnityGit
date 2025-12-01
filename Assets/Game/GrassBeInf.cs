@@ -20,6 +20,8 @@ public class GrassRepellerManager : MonoBehaviour
     public LayerMask repellerLayer = -1;
 
     [Header("LOD性能设置（逆向逻辑：只计算相机范围内的草）")]
+    [Tooltip("手动指定用于LOD计算的主相机（优先使用，为空则自动查找MainCamera）")]
+    public Camera lodCamera; // 新增：可手动指定的相机
     [Tooltip("LOD最大距离：超过此距离的草完全不执行排斥体变形（单位：米）")]
     public float lodMaxDistance = 50f; // 相机为中心的最大计算距离
     [Tooltip("LOD过渡距离：在LOD最大距离前的过渡区间，逐渐降低变形强度（单位：米）")]
@@ -58,6 +60,9 @@ public class GrassRepellerManager : MonoBehaviour
 
     void Start()
     {
+        // 自动查找相机（如果未手动指定）
+        AutoFindCameraIfNotAssigned();
+
         InitializeBuffer();
         _debugTimer = debugLogInterval;
 
@@ -69,6 +74,9 @@ public class GrassRepellerManager : MonoBehaviour
     void Update()
     {
         if (!Application.isPlaying) return;
+
+        // 实时检查相机是否有效，无效则自动查找（容错处理）
+        AutoFindCameraIfNotAssigned();
 
         UpdateRepellerData();
         UpdateDebugInfo();
@@ -86,6 +94,25 @@ public class GrassRepellerManager : MonoBehaviour
         {
             _repellerBuffer.Release();
             _repellerBuffer = null;
+        }
+    }
+
+    /// <summary>
+    /// 如果未手动指定相机，则自动查找MainCamera
+    /// </summary>
+    private void AutoFindCameraIfNotAssigned()
+    {
+        if (lodCamera == null)
+        {
+            lodCamera = Camera.main;
+            if (lodCamera != null && enableDebug)
+            {
+                Debug.Log($"[GrassRepellerManager] 自动查找并使用相机: {lodCamera.name}");
+            }
+            else if (enableDebug)
+            {
+                Debug.LogWarning("[GrassRepellerManager] 未找到有效相机！LOD功能将无法正常工作，请手动指定相机。");
+            }
         }
     }
 
@@ -217,8 +244,10 @@ public class GrassRepellerManager : MonoBehaviour
         _debugTimer -= Time.deltaTime;
         if (_debugTimer <= 0f)
         {
+            string cameraInfo = lodCamera != null ? lodCamera.name : "无有效相机";
             Debug.Log($"[GrassRepellerManager] 活跃排斥体: {ActiveRepellerCount}/{repellers.Count}, " +
                      $"Buffer状态: {(_repellerBuffer != null ? "有效" : "无效")}, " +
+                     $"当前相机: {cameraInfo}, " +
                      $"LOD最大距离: {lodMaxDistance}m");
             _debugTimer = debugLogInterval;
         }
@@ -229,10 +258,15 @@ public class GrassRepellerManager : MonoBehaviour
     /// </summary>
     private void UpdateCameraPositionToShader()
     {
-        Camera mainCam = Camera.main;
-        if (mainCam != null)
+        // 优先使用手动指定的相机
+        if (lodCamera != null)
         {
-            Shader.SetGlobalVector(CameraPositionProperty, mainCam.transform.position);
+            Shader.SetGlobalVector(CameraPositionProperty, lodCamera.transform.position);
+        }
+        else
+        {
+            // 容错：如果相机无效，使用管理器位置作为默认（避免Shader报错）
+            Shader.SetGlobalVector(CameraPositionProperty, transform.position);
         }
     }
 
@@ -282,9 +316,21 @@ public class GrassRepellerManager : MonoBehaviour
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(transform.position, 0.5f);
 
-        // 绘制LOD范围（以相机为中心的动态范围，编辑器中用管理器位置替代预览）
-        Camera mainCam = Camera.main;
-        Vector3 lodCenter = mainCam != null ? mainCam.transform.position : transform.position;
+        // 绘制LOD范围（使用手动指定的相机位置）
+        Vector3 lodCenter = transform.position; // 默认使用管理器位置
+        if (lodCamera != null)
+        {
+            lodCenter = lodCamera.transform.position;
+        }
+        else
+        {
+            // 编辑器模式下如果未指定相机，尝试查找MainCamera预览
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                lodCenter = mainCam.transform.position;
+            }
+        }
 
         if (lodMaxDistance > 0)
         {
@@ -323,11 +369,13 @@ public class GrassRepellerManager : MonoBehaviour
             }
         }
 
-        // 显示信息文本（包含LOD信息）
+        // 显示信息文本（包含相机和LOD信息）
+        string cameraName = lodCamera != null ? lodCamera.name : "未指定";
         UnityEditor.Handles.Label(transform.position + Vector3.up * 2,
             $"Grass Repeller Manager\n" +
             $"Active: {ActiveRepellerCount}\n" +
             $"Extra Radius: {extraRadius}\n" +
+            $"当前相机: {cameraName}\n" +
             $"LOD Max: {lodMaxDistance}m\n" +
             $"LOD Fade: {lodFadeDistance}m");
     }

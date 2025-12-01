@@ -250,9 +250,9 @@ Material:
     - _repelRadius: 1.23
     - _ssssss: 0.4
     - _sssssssssssssssss: 0.4
-    - _terrianoffset: 0
+    - _terrianoffset: 0.5
     - _terrianpro: 1
-    - _terriansize: 50
+    - _terriansize: 256
     - _windinten: 0.02
     - _windintend: 0.32
     - _windspeed: 3
@@ -275,7 +275,7 @@ Material:
     - _WindScale: {r: 40, g: 100, b: 0, a: 0}
     - _bottomColor: {r: 0.12619904, g: 0.2264151, b: 0.06336773, a: 1}
     - _fixxyz: {r: 0, g: -1.52, b: 0, a: 0}
-    - _grassInfforce: {r: 3.61, g: -7.05, b: 4.95, a: 0}
+    - _grassInfforce: {r: 23.4, g: -13, b: 37.5, a: 0}
     - _grassInoffe: {r: 1.28, g: 1, b: 0.1, a: 0}
     - _grassInoffevec2: {r: 1, g: 0.49, b: 0, a: 0}
     - _movegrass: {r: 99, g: 99, b: 99, a: 0}
